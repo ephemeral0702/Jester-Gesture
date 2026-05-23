@@ -2,38 +2,73 @@
 
 每段影片 = 一個資料夾、內含 37 張 JPEG 影格。
 JesterDataset 負責：讀 CSV → 找資料夾 → 取樣 T 張影格 → transform → 回傳 clip tensor。
+
+訓練 transform：resize 128 → 隨機裁切 112 + 色彩抖動（同一 clip 用同一組隨機參數）
+驗證 transform：resize 128 → 中心裁切 112（固定可重現）
+
+關鍵：同一段 clip 的所有影格**必須套用同一組隨機參數**，否則會在影片裡製造人造
+的「相機抖動 + 閃光燈」效果，破壞時序連續性。
 """
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
+import torchvision.transforms.functional as F
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision import transforms
 
 import config
 
 
-def build_transform():
-    """每張影格套用的 transform：resize → 轉 tensor → 正規化。
+# 訓練時的色彩抖動強度（±20%）
+JITTER = 0.2
 
-    注意：**不做水平翻轉**。Jester 有 Swiping Left / Swiping Right 這種
-    左右相反的手勢，水平翻轉會把標籤變錯，屬於不能用的增強。
-    """
-    return transforms.Compose([
-        transforms.Resize((config.IMG_SIZE, config.IMG_SIZE)),
-        transforms.ToTensor(),                                  # [0,1], [C,H,W]
-        transforms.Normalize(config.NORM_MEAN, config.NORM_STD),
-    ])
+
+class ClipTrainTransform:
+    """訓練：resize 128 → 隨機裁切 112 → 色彩抖動 → tensor + normalize。"""
+
+    def __call__(self, frames):
+        # 一次抽好整段 clip 共用的隨機參數
+        max_off = config.RESIZE_SIZE - config.IMG_SIZE
+        top = int(np.random.randint(0, max_off + 1))
+        left = int(np.random.randint(0, max_off + 1))
+        b = 1.0 + (np.random.random() * 2 - 1) * JITTER
+        c = 1.0 + (np.random.random() * 2 - 1) * JITTER
+        s = 1.0 + (np.random.random() * 2 - 1) * JITTER
+
+        out = []
+        for img in frames:
+            img = F.resize(img, [config.RESIZE_SIZE, config.RESIZE_SIZE])
+            img = F.crop(img, top, left, config.IMG_SIZE, config.IMG_SIZE)
+            img = F.adjust_brightness(img, b)
+            img = F.adjust_contrast(img, c)
+            img = F.adjust_saturation(img, s)
+            img = F.to_tensor(img)
+            img = F.normalize(img, list(config.NORM_MEAN), list(config.NORM_STD))
+            out.append(img)
+        return torch.stack(out)
+
+
+class ClipValTransform:
+    """驗證 / 測試：resize 128 → 中心裁切 112 → tensor + normalize。固定。"""
+
+    def __call__(self, frames):
+        out = []
+        for img in frames:
+            img = F.resize(img, [config.RESIZE_SIZE, config.RESIZE_SIZE])
+            img = F.center_crop(img, [config.IMG_SIZE, config.IMG_SIZE])
+            img = F.to_tensor(img)
+            img = F.normalize(img, list(config.NORM_MEAN), list(config.NORM_STD))
+            out.append(img)
+        return torch.stack(out)
 
 
 def sample_indices(n_frames, T, train):
     """從 n_frames 張影格挑出 T 個索引（TSN 式分段取樣）。
 
-    把影片平均切成 T 段，每段取一張：
-    - train=True ：每段內隨機取一張 → 當作時序上的資料增強。
-    - train=False：每段取中間那張 → 固定、可重現，驗證用。
+    - train=True ：每段內隨機取一張（時序資料增強）
+    - train=False：每段取中間那張（固定可重現）
     """
     if n_frames <= 0:
         return [0] * T
@@ -57,16 +92,14 @@ class JesterDataset(Dataset):
         self.frames_dir = Path(frames_dir)
         self.T = T
         self.train = (split == "train")
-        self.transform = build_transform()
+        self.transform = ClipTrainTransform() if self.train else ClipValTransform()
 
         df = pd.read_csv(csv_path)
-        if limit is not None:                    # 快速測試用：只取前 limit 筆
+        if limit is not None:
             df = df.iloc[:limit].reset_index(drop=True)
         self.df = df
 
-        # Train/Validation 的影片欄叫 video_id；Test 叫 id。
         self.id_col = "id" if "id" in df.columns else "video_id"
-        # Test 的 label_id 是空的 → 視為無標籤。
         self.has_label = "label_id" in df.columns and df["label_id"].notna().any()
 
     def __len__(self):
@@ -80,10 +113,8 @@ class JesterDataset(Dataset):
             raise FileNotFoundError(f"找不到影格: {folder}")
 
         idx = sample_indices(len(frames), self.T, self.train)
-        clip = torch.stack([
-            self.transform(Image.open(frames[j]).convert("RGB"))
-            for j in idx
-        ])  # [T, C, H, W]
+        pil_frames = [Image.open(frames[j]).convert("RGB") for j in idx]
+        clip = self.transform(pil_frames)  # [T, C, H, W]
 
         label = int(row["label_id"]) if self.has_label else -1
         return clip, label

@@ -141,7 +141,7 @@ def main():
     # ── 模型 / 損失 / 優化器 ───────────────────────────────
     model = TSMResNet18(pretrained=True).to(device)
     weights = compute_class_weights(config.TRAIN_CSV, config.NUM_CLASSES).to(device)
-    criterion = nn.CrossEntropyLoss(weight=weights)
+    criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=0.1)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))

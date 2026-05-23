@@ -13,7 +13,7 @@ __pycache__/
 .ipynb_checkpoints/
 
 # 訓練產出（權重、曲線、評估報告等）
-checkpoints/
+checkpoints*/
 *.pth
 
 # tensorboard / 訓練 runs

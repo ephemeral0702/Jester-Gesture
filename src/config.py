@@ -14,8 +14,10 @@ TEST_CSV  = DATA_ROOT / "Test.csv"
 CKPT_DIR = Path(r"D:/JESTER/checkpoints")
 
 # ── 影格取樣 / 影像尺寸（階段 1 資料分析的決策）─────────────
-T = 16            # 每段影片取樣的影格數（影片固定 37 幀，均勻取 16 張）
-IMG_SIZE = 112    # resize 後的邊長，影格統一成 IMG_SIZE x IMG_SIZE
+T = 32            # 每段影片取樣的影格數（影片固定 37 幀，均勻取 32 張）
+                  # 16 → 32：給旋轉手勢（CW/CCW）更密的時序解析度
+IMG_SIZE = 112    # 裁切後的邊長，影格統一成 IMG_SIZE x IMG_SIZE
+RESIZE_SIZE = 128 # 先 resize 到此尺寸，再 (隨機/中心) 裁切 → 給增強空間
 
 # 影像正規化（採 ImageNet 統計值，通用）
 NORM_MEAN = (0.485, 0.456, 0.406)
