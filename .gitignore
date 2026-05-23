@@ -1,0 +1,20 @@
+# 憑證 — 絕對不要進版控
+.env
+
+# Claude Code 的專案內筆記，不入版控
+CLAUDE.md
+
+# 資料集（很大，~22GB）
+data/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 訓練產出（權重、曲線、評估報告等）
+checkpoints/
+*.pth
+
+# tensorboard / 訓練 runs
+runs/

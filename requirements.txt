@@ -1,0 +1,7 @@
+# PyTorch with CUDA 12.6（需要特殊 index URL，請單獨執行下面這行）：
+#   pip install torch==2.10.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+
+pandas
+matplotlib
+jupyter
+ipykernel
